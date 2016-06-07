@@ -1,3 +1,7 @@
+# Simple battleship game
+# 1 hit 1 kill
+# 
+
 from random import randint
 board = []
 
@@ -46,4 +50,5 @@ for turn in range(4):
     print "Turn", turn + 1
     print_board(board)
 print "Game Over."
+print "My battleship was at row",ship_row,", column",ship_col 
 print ""
