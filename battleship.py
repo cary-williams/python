@@ -1,6 +1,6 @@
 # Simple battleship game
 # 1 hit 1 kill
-# 
+# 4 guesses to figure out where the battleship is
 
 from random import randint
 board = []
