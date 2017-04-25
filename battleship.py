@@ -30,7 +30,7 @@ for turn in range(4):
     guess_row = int(raw_input("Guess Row:")) - 1
     guess_col = int(raw_input("Guess Col:")) - 1
 ## If they guess right, game over. They win.
-    if guess_row + 1 == ship_row and guess_col + 1 == ship_col:
+    if guess_row == ship_row and guess_col == ship_col:
         print "Congratulations! You sunk my battleship!"
         break
 ## Sanity check. Make sure the guess is on the board, and not already guessed.
@@ -47,8 +47,8 @@ for turn in range(4):
             print ""
             board[guess_row][guess_col] = "X"
 ## Increment the turn and print the new board
-    print "Turn", turn + 1
+    print "Turn", turn + 2
     print_board(board)
 print "Game Over."
-print "My battleship was at row",ship_row,", column",ship_col 
+print "My battleship was at row",ship_row + 1,", column",ship_col + 1
 print ""
