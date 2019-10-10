@@ -65,7 +65,7 @@ def env_check():
             if env == "prod":
                 eb_env = EB_APP + "-prod"
                 return env, eb_env
-        print("You must select either 'qa' or 'prod'.")
+        print("You must select either 'nonprod' or 'prod'.")
         continue
 
 
