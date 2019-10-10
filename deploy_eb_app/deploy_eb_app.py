@@ -2,6 +2,10 @@
 This script is used to deploy a site using elastic beanstalk.
 It assumes that you already have the repo cloned.
 
+Depends on GitPython
+
+pip install GitPython
+
 Follow the directions here to setup eb-cli
 https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/eb-cli3-install.html
 https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/eb3-init.html
@@ -12,11 +16,14 @@ from sys import version_info
 from subprocess import check_output
 from os import chdir
 from os.path import isfile
+from git import Repo
 
 # Set the path to your git repo, and the elastic beanstalk app name.
 REPO_DIR = ""
 EB_APP = ""
 
+# Setting repo and branch
+REPO = Repo('%s' % (REPO_DIR))
 
 def chk_init():
     '''
@@ -28,7 +35,7 @@ def chk_init():
     if conf_file_exists:
         print("Config exists. Continuing ...")
         return conf_file_exists
-    else:
+    if not conf_file_exists:
         print("It looks like you're missing elasticbeanstalk/config.yml "
               "from your repo directory.")
         while True:
@@ -36,7 +43,7 @@ def chk_init():
             if cont == "yes":
                 print("Continuing using " + REPO_DIR)
                 return cont
-            elif cont == "no":
+            if cont == "no":
                 print("Exiting...")
                 quit()
             else:
@@ -50,63 +57,61 @@ def env_check():
     '''
 
     while True:
-        ENV = INPUT("What environment are you using? [nonprod/prod]: ").lower()
-        if ENV == "nonprod":
-            EB_ENV = EB_APP + "-develop"
-            return ENV, EB_ENV
-        elif ENV == "prod":
-            EB_ENV = EB_APP + "-prod"
-            return ENV, EB_ENV
-        else:
-            print("You must select either 'qa' or 'prod'.")
-            continue
+        env = INPUT("What environment are you using? [nonprod/prod]: ").lower()
+        if env in ('nonprod', 'prod'):
+            if env =="nonprod":
+                eb_env = EB_APP + "-develop"
+                return env, eb_env
+            if env == "prod":
+                eb_env = EB_APP + "-prod"
+                return env, eb_env
+        print("You must select either 'qa' or 'prod'.")
+        continue
 
 
 def repo_check():
     '''
-        Prompts user for branch of the repo to use
+        Checks the current git branch
     '''
 
+    branch = REPO.active_branch
     print("Changing directory to " + REPO_DIR + " ...")
     chdir(REPO_DIR)
     while True:
-        BRANCH = INPUT("What branch are you using? [develop/master]: ").lower()
-        if BRANCH == "master" or BRANCH == "develop":
-            return BRANCH
-        if BRANCH == "" or BRANCH == " ":
-            print("You must enter a branch.")
-        else:
-            print("You have selected the branch " + BRANCH + ". Verify this "
+        if branch in ('master', 'develop'):
+            return branch
+        if branch not in ('master', 'develop'):
+            print("You have selected the branch " + branch + ". Verify this "
                   "is the correct branch before confirming the deployment.")
             break
-    return BRANCH
+    return branch
 
 
-def pull_code(BRANCH):
+def pull_code(branch):
     '''
         pulls the latest code and verifies the current branch is correct
     '''
 
-    print(check_output(['git', 'checkout', BRANCH]))
+    print(check_output(['git', 'checkout', branch]))
     print(check_output(['git', 'pull']))
     # Check if the checkout worked properly
-    CURRENT_BRANCH = check_output(['git', 'rev-parse', '--abbrev-ref', 'HEAD'])
-    if CURRENT_BRANCH.strip() != BRANCH:
-        print("Sorry. The BRANCH " + BRANCH + " was not"
+    current_branch = check_output(['git', 'rev-parse', '--abbrev-ref', 'HEAD'])
+    if current_branch.strip() != branch:
+        print("Sorry. The branch " + branch + " was not"
               "checked out successfully. Please try again ...")
         quit()
     else:
         # show last commit
         print("\n\nLatest" + check_output(['git', 'log', '-n', '1']))
-    return CURRENT_BRANCH
+    return current_branch
 
 
-def prod_production(EB_ENV, BRANCH):
+def prod_production(eb_env, branch):
     '''
-        Exits the script if trying to deploy to prod without master BRANCH
+        Exits the script if trying to deploy to prod without master branch
     '''
 
-    if EB_ENV == EB_APP + "-prod" and BRANCH != "master":
+    if eb_env == EB_APP + "-prod" and branch != "master":
         print("#################################################")
         print("PROD PROTECTION ALERT")
         print("prod updates must be from the master branch only."
@@ -115,22 +120,22 @@ def prod_production(EB_ENV, BRANCH):
         quit()
 
 
-def deploy(ENV, CURRENT_BRANCH, EB_ENV):
+def deploy(env, current_branch, eb_env):
     '''
         Deploys the code
     '''
-    DEPLOY_ENV = ENV
-    DEPLOY_APP = EB_ENV
-    deploy_branch = CURRENT_BRANCH
-    print("You are deploying to IZCOM " + DEPLOY_ENV +
-          " using the " + deploy_branch + " BRANCH.")
+    deploy_env = env
+    deploy_app = eb_env
+    deploy_branch = current_branch
+    print("You are deploying to IZCOM " + deploy_env +
+          " using the " + deploy_branch + " branch.")
 
     while True:
         confirmation = INPUT("Do you want to continue?. [yes/no]").lower()
         # Make sure the response is valid
         if confirmation == "yes":
             print("Setting up beanstalk")
-            print(check_output(['eb', 'use', DEPLOY_APP]))
+            print(check_output(['eb', 'use', deploy_app]))
             print("Deploying...")
             print(check_output(['eb', 'deploy']))
             quit()
@@ -147,8 +152,8 @@ if __name__ == "__main__":
     if version_info[:2] <= (2, 7):
         INPUT = raw_input
     chk_init()
-    ENV, EB_ENV = env_check()
-    BRANCH = repo_check()
-    prod_production(EB_ENV, BRANCH)
-    CURRENT_BRANCH = pull_code(BRANCH)
-    deploy(ENV, CURRENT_BRANCH, EB_ENV)
+    env, eb_env = env_check()
+    branch = repo_check()
+    prod_production(eb_env, branch)
+    current_branch = pull_code(branch)
+    deploy(env, current_branch, eb_env)
