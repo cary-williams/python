@@ -59,7 +59,7 @@ def env_check():
     while True:
         env = INPUT("What environment are you using? [nonprod/prod]: ").lower()
         if env in ('nonprod', 'prod'):
-            if env =="nonprod":
+            if env == "nonprod":
                 eb_env = EB_APP + "-develop"
                 return env, eb_env
             if env == "prod":
