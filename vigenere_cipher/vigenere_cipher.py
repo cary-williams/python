@@ -3,11 +3,9 @@ vigenere_cipher
 
 Encodes and Decodes text using the Vigenere Cipher.
 
-Requirements: pyperclip
-
 """
+
 from sys import version_info
-import pyperclip
 
 LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
@@ -28,9 +26,6 @@ def main():
 
     print('%sed message:' % (mode.title()))
     print(translated)
-    pyperclip.copy(translated)
-    print("")
-    print('The message has been copied to the clipboard.')
 
 
 def encrypt_message(key, message):
