@@ -15,9 +15,9 @@ def main():
     cipher_key is the word to use as the key to the cipher
     mode is set to encrypt or decrypt
     """
-    message = INPUT("What is the message you would like to use? ")
+    message = INPUT("What is the message you would like to use? ").replace(" ", "").lower()
     cipher_key = INPUT("Input the key to be used for the cipher ")
-    mode = INPUT("What would you like to do? [encrypt/decrypt] ") # set to 'encrypt' or 'decrypt'
+    mode = INPUT("What would you like to do? [encrypt/decrypt] ").lower()
 
     if mode == 'encrypt':
         translated = encrypt_message(cipher_key, message)
@@ -45,9 +45,9 @@ def translate_message(key, message, mode):
     key_index = 0
     key = key.upper()
 
-    for symbol in message: # loop through each character in message
-        num = LETTERS.find(symbol.upper())
-        if num != -1: # -1 means symbol.upper() was not found in LETTERS
+    for character in message: # loop through each character in message
+        num = LETTERS.find(character.upper())
+        if num != -1: # -1 means character.upper() was not found in LETTERS
             if mode == 'encrypt':
                 num += LETTERS.find(key[key_index]) # add if encrypting
             elif mode == 'decrypt':
@@ -55,18 +55,18 @@ def translate_message(key, message, mode):
 
             num %= len(LETTERS) # handle the potential wrap-around
 
-            # add the encrypted/decrypted symbol to the end of translated.
-            if symbol.isupper():
+            # add the encrypted/decrypted character to the end of translated.
+            if character.isupper():
                 translated.append(LETTERS[num])
-            elif symbol.islower():
+            elif character.islower():
                 translated.append(LETTERS[num].lower())
 
             key_index += 1 # move to the next letter in the key
             if key_index == len(key):
                 key_index = 0
         else:
-            # The symbol was not in LETTERS, so add it to translated as is.
-            translated.append(symbol)
+            # The character was not in LETTERS, so add it to translated as is.
+            translated.append(character)
 
     return ''.join(translated)
 
