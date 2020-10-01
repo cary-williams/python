@@ -6,10 +6,7 @@ import os
 # Set the host, user and password in a settings file such as /etc/default/jira
 # instead of in the script
 #JIRA_HOST="somehost.example.com"
-#JIRA_USER="someuser"
-#JIRA_PASS="somepass"
-
-# Sets the variables above according to the file. 
+ 
 
 def jira_rest_call(data):
 
@@ -38,7 +35,7 @@ json_data = '''
 {
     "fields":{
         "project":{
-            "key":"ABC"
+            "key":"CLOPS"
         },
         "summary": "%s",
         "components":[
