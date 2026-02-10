@@ -1,19 +1,26 @@
 #!/usr/bin/env python3
 # ---------------------------------------------------------------------------
-# Quick repo secret hygiene scanner (not a standalone app)
+# Quick repo secret hygiene scanner 
 #
-# This script is for quickly scanning a directory (and subdirectories) to find
-# potential secrets and basic secret hygiene issues when you do not need a full
-# standalone secret-scanning application. It can:
+# This script provides a lightweight way to scan a directory (and its
+# subdirectories) for potential secrets and common secret hygiene issues when
+# a full standalone scanning application is unnecessary.
+#
+# It can:
 #   1) Detect potential secrets (high-signal patterns and suspicious assignments)
-#   2) Identify "unused" secrets (defined but never referenced)
-#   3) Flag secrets referenced but not defined (e.g., env var used but not set)
+#   2) Identify unused secrets (defined but never referenced)
+#   3) Flag secrets that are referenced but not defined (e.g., env vars in code)
 #
 # Notes:
-# - Heuristic-based, not a replacement for Gitleaks/TruffleHog.
-# - It scans files on disk; it does not read git history.
-# - Paths are printed relative to the scan root by default; use --full-path for absolute paths.
+# - Heuristic-based; not a replacement for tools like Gitleaks or TruffleHog.
+# - Scans files on disk only; git history is not analyzed.
+# - Paths are printed relative to the scan root by default.
+#
+# Args:
+#   --json       Output results in JSON format
+#   --full-path  Print absolute paths instead of paths relative to the scan root
 # ---------------------------------------------------------------------------
+
 
 from __future__ import annotations
 
