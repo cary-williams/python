@@ -4,10 +4,10 @@ This repo is a grab bag of Python scripts I’ve written while learning, experim
 Some are security-adjacent utilities (ciphers, password generation), some are automation helpers, and some are just classic coding exercises.
 
 If you’re here to skim, start with:
+- **`prism.py`**: The original script/prototype that later became the **Risk Shield** web app - https://github.com/cary-williams/risk-shield
+- **`secret-scan.py`**: Lightweight secret hygiene scanner for repos
 - **`jira_ticket.py`**: Creates Jira issues from command output or a file
 - **`jia_git_all_issues.py`**: Pulls Jira issues (handy for reporting or triage)
-- **`prism.py`**: The original script/prototype that later became the **Risk Shield** web app - https://github.com/cary-williams/risk-shield
-
 ---
 
 ## Contents
@@ -44,7 +44,8 @@ These are mostly for learning and practice, but they’re also a good example of
 ### Prototypes / Experiments
 - **`prism.py`**  
   Script prototype that I later based the **Risk Shield** web app on. This was an early “prove it works” version before turning it into a proper application.
-
+- **`secret-scan.py`**
+  Scans directories for potential secrets.
 ---
 
 ### Coding Exercises / Practice
