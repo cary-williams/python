@@ -1,4 +1,5 @@
-from urllib2 import Request, urlopen, URLError
+from urllib.request import Request, urlopen
+from urllib.error import URLError
 import sys
 import json
 import base64
@@ -11,8 +12,9 @@ import os
 def jira_rest_call(data):
 
   # Set the root JIRA URL, and encode the username and password 
-  url = JIRA_HOST, '/rest/api/2/issue'
-  base64string = base64.encodestring('%s:%s' % ('username', 'password')).replace('\n','')
+  url = JIRA_HOST + '/rest/api/2/issue'
+  token = f"{username}:{password}".encode("utf-8")
+  base64string = base64.b64encode(token).decode("utf-8")
 
   # Build the request
   restreq = Request(url) 
@@ -20,10 +22,10 @@ def jira_rest_call(data):
   restreq.add_header("Authorization", "Basic %s" % base64string)
 
   # Send the request and grab JSON response
-  response = urlopen(restreq, data)
+  response = urlopen(restreq, data.encode("utf-8"))
 
   # Load into a JSON object and return that to the calling function
-  return json.loads(response.read())
+  return json.loads(response.read().decode("utf-8"))
 
 
 # Build the text for the JIRA ticket.
@@ -51,4 +53,4 @@ json_data = '''
 json_response = jira_rest_call(json_data)
 parent_key = json_response['key']
 
-print "Created parent issue ", parent_key
+print("Created parent issue", parent_key)

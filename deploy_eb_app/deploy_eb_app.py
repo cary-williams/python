@@ -11,149 +11,162 @@ https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/eb-cli3-install.html
 https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/eb3-init.html
 '''
 
-from __future__ import print_function
-from sys import version_info
-from subprocess import check_output
+from subprocess import check_output, CalledProcessError
 from os import chdir
-from os.path import isfile
+from os.path import isfile, join
 from git import Repo
 
 # Set the path to your git repo, and the elastic beanstalk app name.
 REPO_DIR = ""
 EB_APP = ""
 
-# Setting repo and branch
-REPO = Repo('%s' % (REPO_DIR))
+# Setting repo
+REPO = Repo("%s" % (REPO_DIR))
+
+
+def run(cmd, cwd=None):
+    """
+    Run a command and return stdout as text.
+    """
+    try:
+        out = check_output(cmd, cwd=cwd, text=True)
+        return out.strip()
+    except TypeError:
+        # For very old Python versions that don't support text=True
+        out = check_output(cmd, cwd=cwd)
+        return out.decode("utf-8", errors="replace").strip()
+    except CalledProcessError as e:
+        # Print whatever we can and exit
+        msg = ""
+        if getattr(e, "output", None):
+            try:
+                msg = e.output if isinstance(e.output, str) else e.output.decode("utf-8", errors="replace")
+            except Exception:
+                msg = ""
+        print("Command failed: " + " ".join(cmd))
+        if msg:
+            print(msg)
+        quit(1)
+
 
 def chk_init():
-    '''
-        Checks if beanstalk config exists
-    '''
-
+    """
+    Checks if beanstalk config exists.
+    """
     print("Checking for config.yml ...")
-    conf_file_exists = isfile(REPO_DIR + "/.elasticbeanstalk/config.yml")
+    conf_file_exists = isfile(join(REPO_DIR, ".elasticbeanstalk", "config.yml"))
     if conf_file_exists:
         print("Config exists. Continuing ...")
-        return conf_file_exists
-    if not conf_file_exists:
-        print("It looks like you're missing elasticbeanstalk/config.yml "
-              "from your repo directory.")
-        while True:
-            cont = INPUT("Do you want to continue? [yes/no] ").lower()
-            if cont == "yes":
-                print("Continuing using " + REPO_DIR)
-                return cont
-            if cont == "no":
-                print("Exiting...")
-                quit()
-            else:
-                print("Please type 'yes' or 'no'")
-                continue
+        return True
+
+    print("It looks like you're missing .elasticbeanstalk/config.yml from your repo directory.")
+    while True:
+        cont = INPUT("Do you want to continue? [yes/no] ").lower().strip()
+        if cont == "yes":
+            print("Continuing using " + REPO_DIR)
+            return True
+        if cont == "no":
+            print("Exiting...")
+            quit(0)
+        print("Please type 'yes' or 'no'")
 
 
 def env_check():
-    '''
-        Prompts user for which environment to use
-    '''
-
+    """
+    Prompts user for which environment to use.
+    """
     while True:
-        env = INPUT("What environment are you using? [nonprod/prod]: ").lower()
-        if env in ('nonprod', 'prod'):
+        env = INPUT("What environment are you using? [nonprod/prod]: ").lower().strip()
+        if env in ("nonprod", "prod"):
             if env == "nonprod":
                 eb_env = EB_APP + "-develop"
                 return env, eb_env
-            if env == "prod":
-                eb_env = EB_APP + "-prod"
-                return env, eb_env
+            eb_env = EB_APP + "-prod"
+            return env, eb_env
         print("You must select either 'nonprod' or 'prod'.")
-        continue
 
 
 def repo_check():
-    '''
-        Checks the current git branch
-    '''
+    """
+    Checks the current git branch and changes directory to repo.
+    """
+    branch = REPO.active_branch.name
 
-    branch = REPO.active_branch
     print("Changing directory to " + REPO_DIR + " ...")
     chdir(REPO_DIR)
-    while True:
-        if branch in ('master', 'develop'):
-            return branch
-        if branch not in ('master', 'develop'):
-            print("You have selected the branch " + branch + ". Verify this "
-                  "is the correct branch before confirming the deployment.")
-            break
+
+    if branch in ("master", "main", "develop"):
+        return branch
+
+    print(
+        "You have selected the branch " + branch + ". Verify this "
+        "is the correct branch before confirming the deployment."
+    )
     return branch
 
 
 def pull_code(branch):
-    '''
-        pulls the latest code and verifies the current branch is correct
-    '''
+    """
+    Pulls the latest code and verifies the current branch is correct.
+    """
+    print(run(["git", "checkout", branch], cwd=REPO_DIR))
+    print(run(["git", "pull"], cwd=REPO_DIR))
 
-    print(check_output(['git', 'checkout', branch]))
-    print(check_output(['git', 'pull']))
     # Check if the checkout worked properly
-    current_branch = check_output(['git', 'rev-parse', '--abbrev-ref', 'HEAD'])
-    if current_branch.strip() != branch:
-        print("Sorry. The branch " + branch + " was not"
-              "checked out successfully. Please try again ...")
-        quit()
-    else:
-        # show last commit
-        print("\n\nLatest" + check_output(['git', 'log', '-n', '1']))
+    current_branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=REPO_DIR)
+    if current_branch != branch:
+        print(
+            "Sorry. The branch " + branch + " was not checked out successfully. Please try again ..."
+        )
+        quit(1)
+
+    # Show last commit
+    latest = run(["git", "log", "-n", "1", "--oneline"], cwd=REPO_DIR)
+    print("\n\nLatest: " + latest)
     return current_branch
 
 
-def prod_production(eb_env, branch):
-    '''
-        Exits the script if trying to deploy to prod without master branch
-    '''
-
-    if eb_env == EB_APP + "-prod" and branch != "master":
+def prod_protection(eb_env, branch):
+    """
+    Exits the script if trying to deploy to prod without being on master or main.
+    """
+    if eb_env == EB_APP + "-prod" and branch not in ("master", "main"):
         print("#################################################")
         print("PROD PROTECTION ALERT")
-        print("prod updates must be from the master branch only."
-              " Exiting ...")
+        print("prod updates must be from the master or main branch only. Exiting ...")
         print("#################################################")
-        quit()
+        quit(1)
 
 
 def deploy(env, current_branch, eb_env):
-    '''
-        Deploys the code
-    '''
+    """
+    Deploys the code.
+    """
     deploy_env = env
     deploy_app = eb_env
     deploy_branch = current_branch
-    print("You are deploying to IZCOM " + deploy_env +
-          " using the " + deploy_branch + " branch.")
+
+    print("You are deploying to " + deploy_env + " using the " + deploy_branch + " branch.")
 
     while True:
-        confirmation = INPUT("Do you want to continue?. [yes/no]").lower()
-        # Make sure the response is valid
+        confirmation = INPUT("Do you want to continue? [yes/no] ").lower().strip()
         if confirmation == "yes":
             print("Setting up beanstalk")
-            print(check_output(['eb', 'use', deploy_app]))
+            print(run(["eb", "use", deploy_app], cwd=REPO_DIR))
             print("Deploying...")
-            print(check_output(['eb', 'deploy']))
-            quit()
-        elif confirmation == "no":
+            print(run(["eb", "deploy"], cwd=REPO_DIR))
+            quit(0)
+        if confirmation == "no":
             print("Exiting. Goodbye.")
-            quit()
-        else:
-            print("Please type yes or no to continue.")
-            continue
+            quit(0)
+        print("Please type yes or no to continue.")
 
 
 if __name__ == "__main__":
     INPUT = input
-    if version_info[:2] <= (2, 7):
-        INPUT = raw_input
     chk_init()
     env, eb_env = env_check()
     branch = repo_check()
-    prod_production(eb_env, branch)
+    prod_protection(eb_env, branch)
     current_branch = pull_code(branch)
     deploy(env, current_branch, eb_env)

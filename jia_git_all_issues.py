@@ -25,7 +25,7 @@ response = requests.request(
 )
 
 # Decode Json string to Python
-json_data = json.loads(response.text)
+json_data = response.json()
 
 # Display issues
 for item in json_data["issues"]:

@@ -1,5 +1,5 @@
 # Generate Strong Random Passwords
-import random
+import secrets
 import string
 # This script will generate an 24 character password
 word_length = 24
@@ -15,7 +15,7 @@ def generate_password():
   password = []
   # Choose a random item from 'chars' and add it to 'password'
   for i in range(word_length):
-    rchar = random.choice(chars)
+    rchar = secrets.choice(chars)
     password.append(rchar)
   # Return the composed password as a string
   return "".join(password)
