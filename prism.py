@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-vendor_security.py
-
+prism.py
+also available as web app: https://github.com/cary-williams/risk-shield
 Purpose:
 This script performs a lightweight, non-invasive vendor security and compliance
 triage prior to initiating a full risk assessment. It gathers publicly observable
@@ -32,15 +32,15 @@ Install (inside a virtual environment):
   pip install requests beautifulsoup4 tldextract dnspython
 
 Usage:
-  python vendor_security.py --domain example.com
+  python prism.py --domain example.com
 
-  python vendor_security.py --domain example.com --debug
+  python prism.py --domain example.com --debug
     Enables additional diagnostic output for troubleshooting and validation.
     Debug mode displays all scanned pages regardless of HTTP status and exposes
     internal discovery details such as sitemap-derived URLs and filtered exclusions.
     This mode is intended for development and tuning, not routine triage runs.
 
-  python vendor_security.py --domain example.com --json out.json
+  python prism.py --domain example.com --json out.json
     Outputs results to the console as usual and also writes the full snapshot
     to a JSON file for later review or automation.
 """
