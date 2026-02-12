@@ -22,8 +22,8 @@ def rotate(text, key):
     for character in text:
         if character.isalpha():
             index = letters.index(character.lower()) + key
-            if index > 25:
-                index = index - 26
+            index = (letters.index(character.lower()) + key) % 26
+
             encoded_letter = letters[index]
             if character.isupper():
                 encoded = encoded + encoded_letter.upper()

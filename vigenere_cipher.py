@@ -75,6 +75,4 @@ def translate_message(key, message, mode):
 # the main() function.
 if __name__ == '__main__':
     INPUT = input
-    if version_info[:2] <= (2, 7):
-        INPUT = raw_input
     main()

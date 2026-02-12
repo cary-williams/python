@@ -10,7 +10,7 @@ flatten([1,[2,3,null,4],[null],5])
 returns: [1,2,3,4,5]
 """
 
-from collections import Iterable
+from collections.abc import Iterable
 
 def flatten_gen(iterable):
     '''takes lists from flatten function, and flattens it'''
@@ -24,4 +24,5 @@ def flatten_gen(iterable):
 
 def flatten(iterable):
     '''function actually called. returns the flattened array'''
-     return [ item for item in flatten_gen(iterable) if item is not None ]
+    return [ item for item in flatten_gen(iterable) if item is not None ]
+
