@@ -1,26 +1,27 @@
 #!/usr/bin/env python3
-# ---------------------------------------------------------------------------
-# Quick repo secret hygiene scanner 
-#
-# This script provides a lightweight way to scan a directory (and its
-# subdirectories) for potential secrets and common secret hygiene issues when
-# a full standalone scanning application is unnecessary.
-#
-# It can:
-#   1) Detect potential secrets (high-signal patterns and suspicious assignments)
-#   2) Identify unused secrets (defined but never referenced)
-#   3) Flag secrets that are referenced but not defined (e.g., env vars in code)
-#
-# Notes:
-# - Heuristic-based; not a replacement for tools like Gitleaks or TruffleHog.
-# - Scans files on disk only; git history is not analyzed.
-# - Paths are printed relative to the scan root by default.
-#
-# Args:
-#   --json       Output results in JSON format
-#   --full-path  Print absolute paths instead of paths relative to the scan root
-# ---------------------------------------------------------------------------
+"""
+ ---------------------------------------------------------------------------
+ Quick repo secret hygiene scanner
 
+ This script provides a lightweight way to scan a directory (and its
+ subdirectories) for potential secrets and common secret hygiene issues when
+ a full standalone scanning application is unnecessary.
+
+ It can:
+   1) Detect potential secrets (high-signal patterns and suspicious assignments)
+   2) Identify unused secrets (defined but never referenced)
+   3) Flag secrets that are referenced but not defined (e.g., env vars in code)
+
+ Notes:
+ - Heuristic-based; not a replacement for tools like Gitleaks or TruffleHog.
+ - Scans files on disk only; git history is not analyzed.
+ - Paths are printed relative to the scan root by default.
+
+ Args:
+   --json       Output results in JSON format
+   --full-path  Print absolute paths instead of paths relative to the scan root
+---------------------------------------------------------------------------
+"""
 
 from __future__ import annotations
 
@@ -32,7 +33,7 @@ import sys
 from collections import defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import DefaultDict, Dict, Iterable, List, Optional, Set, Tuple
+from typing import DefaultDict, Iterable, List, Optional, Set, Tuple
 
 
 DEFAULT_EXTENSIONS = {
@@ -88,14 +89,36 @@ PUBLIC_VAR_EXACT = {
 }
 
 HIGH_SIGNAL_PATTERNS: List[Tuple[str, re.Pattern]] = [
-    ("AWS Access Key ID", re.compile(r"\b(A3T[A-Z0-9]|AKIA|ASIA|AGPA|AIDA|AROA|ANPA|ANVA|ASCA)[A-Z0-9]{16}\b")),
-    ("AWS Secret Access Key (heuristic)", re.compile(r"(?i)\baws(.{0,20})?(secret|private|access).{0,20}[:=]\s*['\"]?[A-Za-z0-9/+=]{40}['\"]?")),
-    ("GitHub Token", re.compile(r"\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,255}\b")),
+    (
+        "AWS Access Key ID",
+        re.compile(
+            r"\b(A3T[A-Z0-9]|AKIA|ASIA|AGPA|AIDA|AROA|ANPA|ANVA|ASCA)[A-Z0-9]{16}\b"
+        ),
+    ),
+    (
+        "AWS Secret Access Key (heuristic)",
+        re.compile(
+            r"(?i)\baws(.{0,20})?(secret|private|access).{0,20}[:=]\s*['\"]?"
+            r"[A-Za-z0-9/+=]{40}['\"]?"
+        ),
+    ),
+    (
+        "GitHub Token",
+        re.compile(r"\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,255}\b"),
+    ),
     ("Slack Token", re.compile(r"\b(xox[baprs]-[A-Za-z0-9-]{10,200})\b")),
     ("Stripe Key", re.compile(r"\b(sk|rk)_(live|test)_[A-Za-z0-9]{10,200}\b")),
     ("Google API Key", re.compile(r"\bAIza[0-9A-Za-z\-_]{35}\b")),
-    ("Private Key Block", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----")),
-    ("JWT (heuristic)", re.compile(r"\beyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b")),
+    (
+        "Private Key Block",
+        re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----"),
+    ),
+    (
+        "JWT (heuristic)",
+        re.compile(
+            r"\beyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b"
+        ),
+    ),
 ]
 
 SUSPICIOUS_ASSIGNMENT = re.compile(
@@ -127,6 +150,8 @@ DEFINE_FILE_SUFFIXES = {".env", ".yml", ".yaml", ".tfvars", ".conf", ".ini"}
 
 @dataclass(frozen=True)
 class Finding:
+    """A single scan finding (potential secret, suspicious assignment, etc.)."""
+
     kind: str
     path: str
     line: int
@@ -135,6 +160,8 @@ class Finding:
 
 
 def format_path(path_str: str, root: Path, full_path: bool) -> str:
+    """Format a path for output (absolute or relative to scan root)."""
+
     p = Path(path_str)
     if full_path:
         return str(p.resolve())
@@ -145,17 +172,21 @@ def format_path(path_str: str, root: Path, full_path: bool) -> str:
 
 
 def is_probably_binary(path: Path) -> bool:
+    """Heuristically detect binary files to avoid false positives."""
+
     if path.suffix.lower() in BINARY_EXTENSIONS:
         return True
     try:
         with path.open("rb") as f:
             chunk = f.read(2048)
         return b"\x00" in chunk
-    except Exception:
+    except OSError:
         return True
 
 
 def iter_files(root: Path, exts: Set[str], exclude_dirs: Set[str]) -> Iterable[Path]:
+    """Yield files to scan under root, honoring extensions and exclude dirs."""
+
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in exclude_dirs]
         for fn in filenames:
@@ -170,17 +201,21 @@ def iter_files(root: Path, exts: Set[str], exclude_dirs: Set[str]) -> Iterable[P
 
 
 def safe_read_text(path: Path, max_bytes: int = 2_000_000) -> Optional[str]:
+    """Read text content safely with size/binary checks; returns None if skipped."""
+
     try:
         if path.stat().st_size > max_bytes:
             return None
         if is_probably_binary(path):
             return None
         return path.read_text(encoding="utf-8", errors="replace")
-    except Exception:
+    except (OSError, UnicodeError):
         return None
 
 
 def ignore_var(name: str, ignore_names: Set[str]) -> bool:
+    """Return True if a variable name should be ignored based on configured rules."""
+
     low = name.lower()
     if low in ignore_names:
         return True
@@ -190,12 +225,15 @@ def ignore_var(name: str, ignore_names: Set[str]) -> bool:
 
 
 def scan_text_for_potential_secrets(text: str, path: Path) -> List[Finding]:
+    """Scan file content for high-signal secret patterns and suspicious assignments."""
+
     findings: List[Finding] = []
+    text_lines = text.splitlines()
 
     for label, pat in HIGH_SIGNAL_PATTERNS:
-        for m in pat.finditer(text):
-            line = text.count("\n", 0, m.start()) + 1
-            excerpt = text.splitlines()[line - 1].strip() if line - 1 < len(text.splitlines()) else ""
+        for match in pat.finditer(text):
+            line = text.count("\n", 0, match.start()) + 1
+            excerpt = text_lines[line - 1].strip() if 0 <= line - 1 < len(text_lines) else ""
 
             if label == "JWT (heuristic)":
                 m_assign = re.match(r'^([A-Z][A-Z0-9_]*)\s*=', excerpt)
@@ -204,11 +242,19 @@ def scan_text_for_potential_secrets(text: str, path: Path) -> List[Finding]:
                     if var.startswith(PUBLIC_VAR_PREFIXES) or var in PUBLIC_VAR_EXACT:
                         continue
 
-            findings.append(Finding("potential_secret", str(path), line, label, excerpt[:240]))
+            findings.append(
+                Finding(
+                    "potential_secret",
+                    str(path),
+                    line,
+                    label,
+                    excerpt[:240],
+                )
+            )
 
-    for m in SUSPICIOUS_ASSIGNMENT.finditer(text):
-        name = m.group("name")
-        val = m.group("val")
+    for match in SUSPICIOUS_ASSIGNMENT.finditer(text):
+        name = match.group("name")
+        val = match.group("val")
 
         if not SECRET_NAME_REGEX.search(name):
             continue
@@ -217,23 +263,170 @@ def scan_text_for_potential_secrets(text: str, path: Path) -> List[Finding]:
         if "${" in val or "{{" in val:
             continue
 
-        line = text.count("\n", 0, m.start()) + 1
-        excerpt = text.splitlines()[line - 1].strip() if line - 1 < len(text.splitlines()) else ""
-        findings.append(Finding("suspicious_assignment", str(path), line, f"Suspicious assignment to '{name}'", excerpt[:240]))
+        line = text.count("\n", 0, match.start()) + 1
+        excerpt = text_lines[line - 1].strip() if 0 <= line - 1 < len(text_lines) else ""
+        findings.append(
+            Finding(
+                "suspicious_assignment",
+                str(path),
+                line,
+                f"Suspicious assignment to '{name}'",
+                excerpt[:240],
+            )
+        )
 
     return findings
 
 
-def main() -> int:
+def build_arg_parser() -> argparse.ArgumentParser:
+    """Create and return the CLI argument parser."""
+
     parser = argparse.ArgumentParser(
-        description="Scan a directory for potential secrets, unused defined secrets, and referenced-but-undefined secrets."
+        description=(
+            "Scan for potential secrets, unused secrets, and referenced but undefined secrets."
+        )
     )
-    parser.add_argument("root", nargs="?", default=".", help="Root directory to scan (default: current directory)")
+    parser.add_argument(
+        "root",
+        nargs="?",
+        default=".",
+        help="Root directory to scan (default: current directory)",
+    )
     parser.add_argument("--json", action="store_true", help="Output results as JSON")
-    parser.add_argument("--full-path", action="store_true", help="Use absolute paths instead of relative paths")
-    parser.add_argument("--max-bytes", type=int, default=2_000_000, help="Max file size to read (default: 2,000,000)")
-    parser.add_argument("--exclude-dir", action="append", default=[], help="Directory name to exclude (repeatable)")
-    parser.add_argument("--ignore-var", action="append", default=[], help="Variable name to ignore (repeatable)")
+    parser.add_argument(
+        "--full-path",
+        action="store_true",
+        help="Use absolute paths instead of relative paths",
+    )
+    parser.add_argument(
+        "--max-bytes",
+        type=int,
+        default=2_000_000,
+        help="Max file size to read (default: 2,000,000)",
+    )
+    parser.add_argument(
+        "--exclude-dir",
+        action="append",
+        default=[],
+        help="Directory name to exclude (repeatable)",
+    )
+    parser.add_argument(
+        "--ignore-var",
+        action="append",
+        default=[],
+        help="Variable name to ignore (repeatable)",
+    )
+    return parser
+
+
+def collect_findings_and_vars(
+    root: Path,
+    max_bytes: int,
+    exclude_dirs: Set[str],
+    ignore_names: Set[str],
+) -> tuple[List[Finding], DefaultDict[str, Set[str]], Set[str], int]:
+    """Scan the repo and return findings, referenced vars, defined vars, and file count."""
+
+    findings: List[Finding] = []
+    referenced: DefaultDict[str, Set[str]] = defaultdict(set)
+    defined: Set[str] = set()
+    files_scanned = 0
+
+    for path in iter_files(root, DEFAULT_EXTENSIONS, exclude_dirs):
+        text = safe_read_text(path, max_bytes=max_bytes)
+        if text is None:
+            continue
+
+        files_scanned += 1
+        findings.extend(scan_text_for_potential_secrets(text, path))
+
+        # Collect definitions from definition sources only
+        if path.name in DEFINE_FILE_NAMES or path.suffix.lower() in DEFINE_FILE_SUFFIXES:
+            for match in ENV_DEFINE.finditer(text):
+                name = match.group("name")
+                if not ignore_var(name, ignore_names):
+                    defined.add(name)
+
+            for match in YAML_DEFINE.finditer(text):
+                name = match.group("name")
+                if not ignore_var(name, ignore_names):
+                    defined.add(name)
+
+        # Collect references (ALL-CAPS only)
+        for pat in REF_PATTERNS:
+            for match in pat.finditer(text):
+                name = match.group("name")
+                if ignore_var(name, ignore_names):
+                    continue
+                if not re.fullmatch(r"[A-Z][A-Z0-9_]+", name):
+                    continue
+                referenced[name].add(str(path))
+
+    return findings, referenced, defined, files_scanned
+
+
+def build_json_report(
+    root: Path,
+    files_scanned: int,
+    findings: List[Finding],
+    unused: Set[str],
+    missing: Set[str],
+    referenced: DefaultDict[str, Set[str]],
+    full_path: bool,
+) -> dict:
+    """Build the JSON output payload."""
+
+    return {
+        "scan_root": str(root),
+        "files_scanned": files_scanned,
+        "potential_secrets": [
+            {**asdict(f), "path": format_path(f.path, root, full_path)} for f in findings
+        ],
+        "unused_secrets": sorted(unused),
+        "referenced_but_not_defined": {
+            key: sorted(format_path(p, root, full_path) for p in referenced[key])
+            for key in sorted(missing)
+        },
+    }
+
+
+def print_human_report(
+    root: Path,
+    files_scanned: int,
+    findings: List[Finding],
+    unused: Set[str],
+    missing: Set[str],
+    referenced: DefaultDict[str, Set[str]],
+    full_path: bool,
+) -> None:
+    """Print the human-readable report."""
+
+    print(f"Scanned: {root}")
+    print(f"Files scanned: {files_scanned}")
+
+    print("\nPotential secrets / suspicious values:")
+    print("  none found" if not findings else "")
+    for finding in findings:
+        path = format_path(finding.path, root, full_path)
+        print(f"  [{finding.kind}] {path}:{finding.line} {finding.detail}")
+
+    print("\nUnused secrets (defined but not referenced):")
+    print("  none found" if not unused else "")
+    for var in sorted(unused):
+        print(f"  {var}")
+
+    print("\nReferenced but not defined:")
+    print("  none found" if not missing else "")
+    for key in sorted(missing):
+        print(f"  {key}:")
+        for p in sorted(referenced[key]):
+            print(f"    - {format_path(p, root, full_path)}")
+
+
+def main() -> int:
+    """CLI entrypoint."""
+
+    parser = build_arg_parser()
     args = parser.parse_args()
 
     root = Path(args.root).resolve()
@@ -244,79 +437,37 @@ def main() -> int:
     exclude_dirs = set(DEFAULT_EXCLUDE_DIRS) | set(args.exclude_dir)
     ignore_names = set(DEFAULT_IGNORE_VAR_NAMES) | {n.lower() for n in args.ignore_var}
 
-    findings: List[Finding] = []
-    referenced: DefaultDict[str, Set[str]] = defaultdict(set)
-    defined: Set[str] = set()
-    files_scanned = 0
-
-    for path in iter_files(root, DEFAULT_EXTENSIONS, exclude_dirs):
-        text = safe_read_text(path, max_bytes=args.max_bytes)
-        if text is None:
-            continue
-
-        files_scanned += 1
-        findings.extend(scan_text_for_potential_secrets(text, path))
-
-        # collect definitions from definition sources only
-        if path.name in DEFINE_FILE_NAMES or path.suffix.lower() in DEFINE_FILE_SUFFIXES:
-            for m in ENV_DEFINE.finditer(text):
-                name = m.group("name")
-                if not ignore_var(name, ignore_names):
-                    defined.add(name)
-            for m in YAML_DEFINE.finditer(text):
-                name = m.group("name")
-                if not ignore_var(name, ignore_names):
-                    defined.add(name)
-
-        # collect references (ALL-CAPS only)
-        for pat in REF_PATTERNS:
-            for m in pat.finditer(text):
-                name = m.group("name")
-                if ignore_var(name, ignore_names):
-                    continue
-                if not re.fullmatch(r"[A-Z][A-Z0-9_]+", name):
-                    continue
-                referenced[name].add(str(path))
+    findings, referenced, defined, files_scanned = collect_findings_and_vars(
+        root=root,
+        max_bytes=args.max_bytes,
+        exclude_dirs=exclude_dirs,
+        ignore_names=ignore_names,
+    )
 
     unused = {v for v in (defined - set(referenced.keys())) if SECRET_NAME_REGEX.search(v)}
     missing = set(referenced.keys()) - defined
 
     if args.json:
-        output = {
-            "scan_root": str(root),
-            "files_scanned": files_scanned,
-            "potential_secrets": [
-                {**asdict(f), "path": format_path(f.path, root, args.full_path)}
-                for f in findings
-            ],
-            "unused_secrets": sorted(unused),
-            "referenced_but_not_defined": {
-                k: sorted(format_path(p, root, args.full_path) for p in referenced[k])
-                for k in sorted(missing)
-            },
-        }
+        output = build_json_report(
+            root=root,
+            files_scanned=files_scanned,
+            findings=findings,
+            unused=unused,
+            missing=missing,
+            referenced=referenced,
+            full_path=args.full_path,
+        )
         print(json.dumps(output, indent=2))
     else:
-        print(f"Scanned: {root}")
-        print(f"Files scanned: {files_scanned}")
-
-        print("\nPotential secrets / suspicious values:")
-        print("  none found" if not findings else "")
-        for f in findings:
-            p = format_path(f.path, root, args.full_path)
-            print(f"  [{f.kind}] {p}:{f.line} {f.detail}")
-
-        print("\nUnused secrets (defined but not referenced):")
-        print("  none found" if not unused else "")
-        for v in sorted(unused):
-            print(f"  {v}")
-
-        print("\nReferenced but not defined:")
-        print("  none found" if not missing else "")
-        for k in sorted(missing):
-            print(f"  {k}:")
-            for p in sorted(referenced[k]):
-                print(f"    - {format_path(p, root, args.full_path)}")
+        print_human_report(
+            root=root,
+            files_scanned=files_scanned,
+            findings=findings,
+            unused=unused,
+            missing=missing,
+            referenced=referenced,
+            full_path=args.full_path,
+        )
 
     return 1 if findings or missing else 0
 
