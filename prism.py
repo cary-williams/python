@@ -2,6 +2,7 @@
 """
 prism.py
 also available as web app: https://github.com/cary-williams/risk-shield
+
 Purpose:
 This script performs a lightweight, non-invasive vendor security and compliance
 triage prior to initiating a full risk assessment. It gathers publicly observable
@@ -162,7 +163,6 @@ ISO_GATE_PATTERNS = [
     re.compile(r"\bcertif", re.IGNORECASE),
 ]
 
-# Patterns used to identify likely blog content to exclude from sitemap-derived checks.
 BLOG_EXCLUDE_PATTERNS = [
     r"/blog/",
     r"/posts/",
@@ -174,7 +174,7 @@ BLOG_EXCLUDE_PATTERNS = [
     r"/tags/",
     r"/feed",
     r"/author/",
-    r"/202[0-9]/",  # date-based paths like /2024/05/...
+    r"/202[0-9]/",
 ]
 
 
@@ -184,6 +184,7 @@ BLOG_EXCLUDE_PATTERNS = [
 
 @dataclass
 class PageScanResult:
+    """Result of scanning a single URL."""
     url: str
     status_code: Optional[int]
     fetched: bool
@@ -199,6 +200,7 @@ class PageScanResult:
 
 @dataclass
 class SocAssessment:
+    """Summary of SOC claim detection and likely access gating behavior."""
     soc_claimed: bool
     access: str
     evidence: str
@@ -209,6 +211,7 @@ class SocAssessment:
 
 @dataclass
 class FrameworkAssessment:
+    """Assessment for a single compliance or security framework claim."""
     framework: str
     claimed: bool
     confidence: float
@@ -219,6 +222,7 @@ class FrameworkAssessment:
 
 @dataclass
 class SpfAssessment:
+    """Assessment of SPF existence and basic configuration risk indicators."""
     present: bool
     record: Optional[str]
     summary: Optional[str]
@@ -231,6 +235,7 @@ class SpfAssessment:
 
 @dataclass
 class DmarcAssessment:
+    """Assessment of DMARC existence and policy posture."""
     present: bool
     policy: Optional[str]
     pct: Optional[int]
@@ -241,6 +246,7 @@ class DmarcAssessment:
 
 @dataclass
 class HstsAssessment:
+    """Assessment of HSTS header presence and key directives."""
     present: bool
     raw: Optional[str]
     max_age: Optional[int]
@@ -250,6 +256,7 @@ class HstsAssessment:
 
 @dataclass
 class SecurityTxtAssessment:
+    """Assessment of security.txt presence and parsed fields."""
     present: bool
     url: Optional[str]
     contact: List[str]
@@ -263,6 +270,7 @@ class SecurityTxtAssessment:
 
 @dataclass
 class RobotsAssessment:
+    """Assessment of robots.txt presence and sitemap declarations."""
     present: bool
     url: Optional[str]
     sitemaps: List[str]
@@ -270,6 +278,7 @@ class RobotsAssessment:
 
 @dataclass
 class StatusPageAssessment:
+    """Assessment of a likely public status page endpoint."""
     present: bool
     url: Optional[str]
     status_code: Optional[int]
@@ -279,7 +288,8 @@ class StatusPageAssessment:
 
 @dataclass
 class DnsTlsAssessment:
-    dnssec_status: str  # "enabled" | "partial" | "not_enabled" | "unknown"
+    """Combined DNS, email auth, TLS, and web hygiene assessments."""
+    dnssec_status: str
     spf: SpfAssessment
     dmarc: DmarcAssessment
     tls_version: Optional[str]
@@ -298,6 +308,7 @@ class DnsTlsAssessment:
 
 @dataclass
 class VendorSnapshot:
+    """Top-level snapshot output combining page scan signals and DNS/TLS checks."""
     vendor_domain: str
     base_url: str
     scanned_at_utc: str
@@ -313,15 +324,18 @@ class VendorSnapshot:
 # ----------------------------
 
 def normalize_domain(domain: str) -> str:
+    """Normalize a domain input by removing scheme/path and lowercasing."""
     domain = domain.strip().replace("http://", "").replace("https://", "")
     return domain.split("/")[0].lower()
 
 
 def build_base_url(domain: str) -> str:
+    """Build an https base URL from a normalized domain."""
     return f"https://{domain}"
 
 
 def clean_url(u: str) -> str:
+    """Remove default ports from a URL when they appear in the path form."""
     if u.startswith("https://"):
         return u.replace(":443/", "/")
     if u.startswith("http://"):
@@ -330,11 +344,13 @@ def clean_url(u: str) -> str:
 
 
 def get_registrable_domain(domain: str) -> str:
+    """Return the registrable domain (eTLD+1) using tldextract."""
     ext = tldextract.extract(domain)
     return ext.top_domain_under_public_suffix or domain
 
 
 def compile_patterns(patterns: List[str]) -> List[re.Pattern]:
+    """Compile a list of regex strings into case-insensitive regex patterns."""
     return [re.compile(p, re.IGNORECASE) for p in patterns]
 
 
@@ -342,12 +358,16 @@ SOC_PATTERNS = compile_patterns(SOC_KEYWORDS)
 REQUEST_PATTERNS = compile_patterns(REQUEST_GATED_PATTERNS)
 LOGIN_PATTERNS = compile_patterns(LOGIN_GATED_PATTERNS)
 PORTAL_PATTERNS = compile_patterns(TRUST_PORTAL_SIGNALS)
-FRAMEWORK_COMPILED: Dict[str, List[re.Pattern]] = {n: compile_patterns(p) for n, p in FRAMEWORK_PATTERNS.items()}
+FRAMEWORK_COMPILED: Dict[str, List[re.Pattern]] = {
+    name: compile_patterns(patterns)
+    for name, patterns in FRAMEWORK_PATTERNS.items()
+}
 PCI_NEG_PATTERNS = compile_patterns(PCI_NEGATIVES)
 BLOG_EXCLUDE_COMPILED = [re.compile(p, re.IGNORECASE) for p in BLOG_EXCLUDE_PATTERNS]
 
 
 def fetch_url(url: str, timeout: int) -> Tuple[Optional[requests.Response], Optional[str]]:
+    """Fetch a URL via HTTP GET and return (response, error_message)."""
     try:
         r = requests.get(url, headers=DEFAULT_HEADERS, timeout=timeout, allow_redirects=True)
         return r, None
@@ -356,6 +376,7 @@ def fetch_url(url: str, timeout: int) -> Tuple[Optional[requests.Response], Opti
 
 
 def extract_visible_text(html: str) -> Tuple[Optional[str], str]:
+    """Extract a best-effort page title and visible text from HTML."""
     soup = BeautifulSoup(html, "html.parser")
     title = soup.title.string.strip() if soup.title and soup.title.string else None
     for tag in soup(["script", "style", "noscript"]):
@@ -365,10 +386,17 @@ def extract_visible_text(html: str) -> Tuple[Optional[str], str]:
 
 
 def find_hits(patterns: List[re.Pattern], text: str) -> List[str]:
+    """Return the pattern strings for regex patterns that match the given text."""
     return [p.pattern for p in patterns if p.search(text)]
 
 
-def has_nearby(text: str, a_patterns: List[re.Pattern], b_patterns: List[re.Pattern], window: int = 220) -> bool:
+def has_nearby(
+    text: str,
+    a_patterns: List[re.Pattern],
+    b_patterns: List[re.Pattern],
+    window: int = 220,
+) -> bool:
+    """Return True if any b_pattern appears near any a_pattern within a window."""
     spans: List[Tuple[int, int]] = []
     for ap in a_patterns:
         for m in ap.finditer(text):
@@ -376,13 +404,14 @@ def has_nearby(text: str, a_patterns: List[re.Pattern], b_patterns: List[re.Patt
     if not spans:
         return False
     for start, end in spans:
-        chunk = text[max(0, start - window) : min(len(text), end + window)]
+        chunk = text[max(0, start - window): min(len(text), end + window)]
         if any(bp.search(chunk) for bp in b_patterns):
             return True
     return False
 
 
 def generate_candidate_urls(base_url: str, domain: str) -> List[str]:
+    """Generate default candidate URLs using common paths and subdomains."""
     out: List[str] = [urljoin(base_url, p) for p in DEFAULT_PATH_CANDIDATES]
     reg = get_registrable_domain(domain)
     out.extend([f"https://{s}.{reg}/" for s in COMMON_SUBDOMAINS])
@@ -396,13 +425,30 @@ def generate_candidate_urls(base_url: str, domain: str) -> List[str]:
 
 
 def is_same_registrable_domain(url: str, vendor_domain: str) -> bool:
+    """Return True if a URL's hostname matches the vendor registrable domain."""
     host = urlparse(url).hostname or ""
     return get_registrable_domain(host) == get_registrable_domain(vendor_domain)
 
 
-def discover_links_from_homepage(homepage_html: str, homepage_url: str, vendor_domain: str) -> List[str]:
+def discover_links_from_homepage(
+    homepage_html: str,
+    homepage_url: str,
+    vendor_domain: str,
+) -> List[str]:
+    """Extract likely trust/security/compliance links from homepage HTML."""
     soup = BeautifulSoup(homepage_html, "html.parser")
-    keywords = ["trust", "security", "compliance", "soc", "audit", "privacy", "legal", "iso", "pci", "gdpr"]
+    keywords = [
+        "trust",
+        "security",
+        "compliance",
+        "soc",
+        "audit",
+        "privacy",
+        "legal",
+        "iso",
+        "pci",
+        "gdpr",
+    ]
     found: List[str] = []
     for a in soup.find_all("a", href=True):
         href = a["href"].strip()
@@ -422,6 +468,7 @@ def discover_links_from_homepage(homepage_html: str, homepage_url: str, vendor_d
 
 
 def detect_frameworks(text: str) -> Dict[str, List[str]]:
+    """Detect framework claim patterns in text with extra guards for broad matches."""
     found: Dict[str, List[str]] = {}
     for name, patterns in FRAMEWORK_COMPILED.items():
         hits = find_hits(patterns, text)
@@ -452,6 +499,7 @@ def detect_frameworks(text: str) -> Dict[str, List[str]]:
 # ----------------------------
 
 def dns_resolve_exists(qname: str, rtype: str, lifetime: int = 6) -> bool:
+    """Return True if a DNS record exists and resolves for the given name and type."""
     try:
         ans = dns.resolver.resolve(qname, rtype, lifetime=lifetime)
         return len(ans) > 0
@@ -460,6 +508,7 @@ def dns_resolve_exists(qname: str, rtype: str, lifetime: int = 6) -> bool:
 
 
 def check_dnssec_status(domain: str) -> str:
+    """Check DNSSEC status using DNSKEY and DS presence."""
     try:
         has_dnskey = dns_resolve_exists(domain, "DNSKEY")
         has_ds = dns_resolve_exists(domain, "DS")
@@ -475,6 +524,7 @@ def check_dnssec_status(domain: str) -> str:
 
 
 def check_spf(domain: str) -> Tuple[bool, Optional[str]]:
+    """Return (present, record) for SPF based on TXT records."""
     try:
         ans = dns.resolver.resolve(domain, "TXT", lifetime=6)
         for r in ans:
@@ -487,12 +537,18 @@ def check_spf(domain: str) -> Tuple[bool, Optional[str]]:
 
 
 def parse_spf_policy(spf_record: str) -> Optional[str]:
+    """Parse the terminal SPF all mechanism and return it, if present."""
     rec = spf_record.strip()
-    m = re.search(r"\s([~?\-\+]?all)\s*$", rec, re.IGNORECASE) or re.search(r"([~?\-\+]?all)$", rec, re.IGNORECASE)
+    m = re.search(r"\s([~?\-\+]?all)\s*$", rec, re.IGNORECASE) or re.search(
+        r"([~?\-\+]?all)$",
+        rec,
+        re.IGNORECASE,
+    )
     return m.group(1).lower() if m else None
 
 
 def spf_dns_lookup_estimate(spf_record: str) -> int:
+    """Estimate SPF DNS lookups from include/redirect/exists/a/mx/ptr mechanisms."""
     rec = spf_record.lower()
     include_n = len(re.findall(r"\binclude:", rec))
     redirect_n = len(re.findall(r"\bredirect=", rec))
@@ -504,15 +560,21 @@ def spf_dns_lookup_estimate(spf_record: str) -> int:
 
 
 def summarize_spf(spf_record: str) -> str:
+    """Create a short summary string for an SPF record."""
     policy = parse_spf_policy(spf_record)
     includes = len(re.findall(r"\binclude:", spf_record, re.IGNORECASE))
     has_ip4 = bool(re.search(r"\bip4:", spf_record, re.IGNORECASE))
     has_ip6 = bool(re.search(r"\bip6:", spf_record, re.IGNORECASE))
     lookups = spf_dns_lookup_estimate(spf_record)
-    return f"policy={policy}, includes={includes}, lookups_est={lookups}, has_ip4={has_ip4}, has_ip6={has_ip6}, length={len(spf_record.strip())}"
+    return (
+        f"policy={policy}, includes={includes}, lookups_est={lookups}, "
+        f"has_ip4={has_ip4}, has_ip6={has_ip6}, "
+        f"length={len(spf_record.strip())}"
+    )
 
 
 def assess_spf(spf_present: bool, spf_record: Optional[str]) -> SpfAssessment:
+    """Assess SPF record posture and return warnings for common weak configurations."""
     warnings_list: List[str] = []
     if not spf_present or not spf_record:
         return SpfAssessment(False, None, None, None, None, None, None, [])
@@ -524,14 +586,22 @@ def assess_spf(spf_present: bool, spf_record: Optional[str]) -> SpfAssessment:
 
     lookup_risk = lookups > 10
     if lookup_risk:
-        warnings_list.append(f"SPF may exceed DNS lookup limit (estimated {lookups} > 10).")
+        warnings_list.append(
+            f"SPF may exceed DNS lookup limit (estimated {lookups} > 10)."
+        )
 
     if policy in ("+all", "all"):
         warnings_list.append("SPF policy appears permissive (+all).")
     if policy is None:
-        warnings_list.append("SPF policy does not clearly end with an all mechanism (-all, ~all, ?all, +all).")
+        warnings_list.append(
+            "SPF policy does not clearly end with an all mechanism "
+            "(-all, ~all, ?all, +all)."
+        )
     if length > 255:
-        warnings_list.append("SPF record length > 255 characters. Some DNS setups may split TXT strings and break parsing.")
+        warnings_list.append(
+            "SPF record length > 255 characters. Some DNS setups may split TXT "
+            "strings and break parsing."
+        )
     if length > 512:
         warnings_list.append("SPF record length is very large (>512). Delivery issues are more likely.")
 
@@ -548,6 +618,7 @@ def assess_spf(spf_present: bool, spf_record: Optional[str]) -> SpfAssessment:
 
 
 def check_dmarc(domain: str) -> Tuple[bool, Optional[str], Optional[str]]:
+    """Return (present, policy, raw_record) for DMARC TXT."""
     try:
         ans = dns.resolver.resolve(f"_dmarc.{domain}", "TXT", lifetime=6)
         raw = " ".join(a.to_text().strip('"') for a in ans)
@@ -559,6 +630,7 @@ def check_dmarc(domain: str) -> Tuple[bool, Optional[str], Optional[str]]:
 
 
 def parse_dmarc_tags(raw: str) -> Tuple[Optional[int], bool, bool]:
+    """Parse DMARC pct and whether rua/ruf reporting tags are present."""
     pct = None
     m_pct = re.search(r"\bpct\s*=\s*(\d{1,3})\b", raw, re.IGNORECASE)
     if m_pct:
@@ -571,7 +643,12 @@ def parse_dmarc_tags(raw: str) -> Tuple[Optional[int], bool, bool]:
     return pct, rua_present, ruf_present
 
 
-def assess_dmarc(present: bool, policy: Optional[str], raw: Optional[str]) -> DmarcAssessment:
+def assess_dmarc(
+    present: bool,
+    policy: Optional[str],
+    raw: Optional[str],
+) -> DmarcAssessment:
+    """Assess DMARC posture and return warnings for monitoring-only or incomplete records."""
     warnings_list: List[str] = []
     if not present or not raw:
         return DmarcAssessment(False, None, None, None, None, [])
@@ -590,7 +667,12 @@ def assess_dmarc(present: bool, policy: Optional[str], raw: Optional[str]) -> Dm
     return DmarcAssessment(True, policy, pct, rua_present, ruf_present, warnings_list)
 
 
-def tls_handshake(domain: str, context: ssl.SSLContext, timeout: int = 8) -> Tuple[Optional[str], Optional[dict], Optional[str]]:
+def tls_handshake(
+    domain: str,
+    context: ssl.SSLContext,
+    timeout: int = 8,
+) -> Tuple[Optional[str], Optional[dict], Optional[str]]:
+    """Attempt a TLS handshake and return (tls_version, cert_dict, error_message)."""
     try:
         with socket.create_connection((domain, 443), timeout=timeout) as sock:
             with context.wrap_socket(sock, server_hostname=domain) as ssock:
@@ -599,7 +681,12 @@ def tls_handshake(domain: str, context: ssl.SSLContext, timeout: int = 8) -> Tup
         return None, None, str(e)
 
 
-def probe_legacy_tls_allowed(domain: str, protocol_attr: str, timeout: int = 8) -> Optional[bool]:
+def probe_legacy_tls_allowed(
+    domain: str,
+    protocol_attr: str,
+    timeout: int = 8,
+) -> Optional[bool]:
+    """Probe whether a legacy TLS protocol is accepted by the server."""
     proto = getattr(ssl, protocol_attr, None)
     if proto is None:
         return None
@@ -617,6 +704,7 @@ def probe_legacy_tls_allowed(domain: str, protocol_attr: str, timeout: int = 8) 
 
 
 def parse_cert_time_utc(timestr: str) -> Optional[datetime]:
+    """Parse OpenSSL-style cert time strings into timezone-aware UTC datetimes."""
     try:
         fmt = "%b %d %H:%M:%S %Y %Z"
         return datetime.strptime(timestr, fmt).replace(tzinfo=timezone.utc)
@@ -634,6 +722,7 @@ def check_tls(domain: str, timeout: int = 8) -> Tuple[
     Optional[bool],
     Optional[bool],
 ]:
+    """Check negotiated TLS version, cert validity, and whether legacy TLS is accepted."""
     modern = ssl.create_default_context()
     modern.set_ciphers("DEFAULT:@SECLEVEL=2")
 
@@ -659,10 +748,20 @@ def check_tls(domain: str, timeout: int = 8) -> Tuple[
     tls11_allowed = probe_legacy_tls_allowed(domain, "PROTOCOL_TLSv1_1", timeout=timeout)
     tls10_allowed = probe_legacy_tls_allowed(domain, "PROTOCOL_TLSv1", timeout=timeout)
 
-    return negotiated, tls_ok, cert_valid, not_before, not_after, days_until_expiry, tls11_allowed, tls10_allowed
+    return (
+        negotiated,
+        tls_ok,
+        cert_valid,
+        not_before,
+        not_after,
+        days_until_expiry,
+        tls11_allowed,
+        tls10_allowed,
+    )
 
 
 def parse_hsts(header_value: str) -> Tuple[Optional[int], Optional[bool], Optional[bool]]:
+    """Parse HSTS max-age and flags from a header value."""
     max_age = None
     hv = header_value.strip()
     m = re.search(r"max-age\s*=\s*(\d+)", hv, re.IGNORECASE)
@@ -677,6 +776,7 @@ def parse_hsts(header_value: str) -> Tuple[Optional[int], Optional[bool], Option
 
 
 def check_hsts(base_url: str, timeout: int = 10) -> HstsAssessment:
+    """Fetch base URL and determine if HSTS is present and how it is configured."""
     try:
         r = requests.get(base_url, headers=DEFAULT_HEADERS, timeout=timeout, allow_redirects=True)
         h = r.headers.get("Strict-Transport-Security")
@@ -693,6 +793,7 @@ def check_hsts(base_url: str, timeout: int = 10) -> HstsAssessment:
 # ----------------------------
 
 def fetch_text(url: str, timeout: int) -> Tuple[Optional[str], Optional[int], Optional[str]]:
+    """Fetch a URL and return (body_text, status_code, error_message)."""
     resp, err = fetch_url(url, timeout=timeout)
     if resp is None:
         return None, None, err
@@ -700,6 +801,7 @@ def fetch_text(url: str, timeout: int) -> Tuple[Optional[str], Optional[int], Op
 
 
 def parse_security_txt(body: str) -> Dict[str, List[str]]:
+    """Parse security.txt content into a dict of lowercased fields to list of values."""
     fields: Dict[str, List[str]] = {}
     for line in body.splitlines():
         line = line.strip()
@@ -715,6 +817,7 @@ def parse_security_txt(body: str) -> Dict[str, List[str]]:
 
 
 def check_security_txt(base_url: str, timeout: int = 10) -> SecurityTxtAssessment:
+    """Discover and parse security.txt at well-known and root locations."""
     candidates = [
         urljoin(base_url.rstrip("/") + "/", ".well-known/security.txt"),
         urljoin(base_url.rstrip("/") + "/", "security.txt"),
@@ -733,7 +836,9 @@ def check_security_txt(base_url: str, timeout: int = 10) -> SecurityTxtAssessmen
             encryption = fields.get("encryption", [])
             acknowledgments = fields.get("acknowledgments", [])
             preferred_languages_list = fields.get("preferred-languages", [])
-            preferred_languages = preferred_languages_list[0] if preferred_languages_list else None
+            preferred_languages = (
+                preferred_languages_list[0] if preferred_languages_list else None
+            )
 
             if not contact:
                 warnings_list.append("security.txt present but Contact field not found.")
@@ -741,7 +846,9 @@ def check_security_txt(base_url: str, timeout: int = 10) -> SecurityTxtAssessmen
                 warnings_list.append("security.txt present but Expires field not found.")
             else:
                 if not re.search(r"\d{4}", expires):
-                    warnings_list.append("security.txt Expires field does not look like a valid date.")
+                    warnings_list.append(
+                        "security.txt Expires field does not look like a valid date."
+                    )
 
             return SecurityTxtAssessment(
                 present=True,
@@ -769,6 +876,7 @@ def check_security_txt(base_url: str, timeout: int = 10) -> SecurityTxtAssessmen
 
 
 def check_robots_and_sitemaps(base_url: str, timeout: int = 10) -> RobotsAssessment:
+    """Fetch robots.txt and parse any declared Sitemap: lines."""
     robots_url = urljoin(base_url.rstrip("/") + "/", "robots.txt")
     body, status, err = fetch_text(robots_url, timeout=timeout)
     if err or status is None or not (200 <= status < 300) or body is None:
@@ -788,6 +896,7 @@ def check_robots_and_sitemaps(base_url: str, timeout: int = 10) -> RobotsAssessm
 
 
 def check_status_page(domain: str, base_url: str, timeout: int = 10) -> StatusPageAssessment:
+    """Attempt to find a likely vendor status page and return basic signals."""
     notes: List[str] = []
     reg = get_registrable_domain(domain)
     candidates = [
@@ -813,7 +922,7 @@ def check_status_page(domain: str, base_url: str, timeout: int = 10) -> StatusPa
             if "statuspage" in txt or "atlassian" in txt:
                 notes.append("Looks like Atlassian Statuspage.")
             if "incident" in txt and "uptime" in txt:
-                notes.append("Contains common status/incident keywords.")
+                notes.append("Contains common status or incident keywords.")
 
             return StatusPageAssessment(True, u, status, title, notes)
 
@@ -821,6 +930,7 @@ def check_status_page(domain: str, base_url: str, timeout: int = 10) -> StatusPa
 
 
 def fetch_xml(url: str, timeout: int = 10) -> Tuple[Optional[str], Optional[int], Optional[str]]:
+    """Fetch a URL expected to be XML and return (body_text, status_code, error_message)."""
     resp, err = fetch_url(url, timeout=timeout)
     if resp is None:
         return None, None, err
@@ -828,10 +938,7 @@ def fetch_xml(url: str, timeout: int = 10) -> Tuple[Optional[str], Optional[int]
 
 
 def parse_sitemap_urls(sitemap_body: str) -> List[str]:
-    """
-    Forgiving parser to pull <loc> entries from sitemap XML text.
-    Returns absolute URLs as strings.
-    """
+    """Extract <loc> URLs from sitemap XML text and return de-duplicated list."""
     if not sitemap_body:
         return []
     locs = re.findall(r"<loc>(.*?)</loc>", sitemap_body, flags=re.IGNORECASE | re.DOTALL)
@@ -846,9 +953,7 @@ def parse_sitemap_urls(sitemap_body: str) -> List[str]:
 
 
 def likely_blog_url(url: str) -> bool:
-    """
-    Returns True if URL matches common blog/news/article patterns.
-    """
+    """Return True if URL matches common blog/news/article patterns."""
     u = url.lower()
     for p in BLOG_EXCLUDE_COMPILED:
         if p.search(u):
@@ -861,6 +966,7 @@ def likely_blog_url(url: str) -> bool:
 # ----------------------------
 
 def scan_page(url: str, timeout: int) -> PageScanResult:
+    """Fetch a page and extract keyword and framework signals from visible text."""
     resp, err = fetch_url(url, timeout=timeout)
     if resp is None:
         return PageScanResult(url, None, False, err, None, [], [], [], [], {}, None)
@@ -869,13 +975,33 @@ def scan_page(url: str, timeout: int) -> PageScanResult:
     ctype = resp.headers.get("Content-Type", "")
 
     if ctype and ("text/html" not in ctype and "application/xhtml+xml" not in ctype):
-        return PageScanResult(clean_url(resp.url), status, True, f"Non-HTML content type: {ctype}", None, [], [], [], [], {}, None)
+        return PageScanResult(
+            clean_url(resp.url),
+            status,
+            True,
+            f"Non-HTML content type: {ctype}",
+            None,
+            [],
+            [],
+            [],
+            [],
+            {},
+            None,
+        )
 
     title, text = extract_visible_text(resp.text or "")
 
     soc_hits = find_hits(SOC_PATTERNS, text)
-    req_hits: List[str] = ["request_language_near_soc"] if soc_hits and has_nearby(text, SOC_PATTERNS, REQUEST_PATTERNS) else []
-    login_hits: List[str] = ["login_language_near_soc"] if soc_hits and has_nearby(text, SOC_PATTERNS, LOGIN_PATTERNS) else []
+    req_hits: List[str] = (
+        ["request_language_near_soc"]
+        if soc_hits and has_nearby(text, SOC_PATTERNS, REQUEST_PATTERNS)
+        else []
+    )
+    login_hits: List[str] = (
+        ["login_language_near_soc"]
+        if soc_hits and has_nearby(text, SOC_PATTERNS, LOGIN_PATTERNS)
+        else []
+    )
     portal_hits = find_hits(PORTAL_PATTERNS, text)
     frameworks_found = detect_frameworks(text)
     sample = text[:450] if (soc_hits or portal_hits or frameworks_found) else None
@@ -896,6 +1022,7 @@ def scan_page(url: str, timeout: int) -> PageScanResult:
 
 
 def assess_soc(pages: List[PageScanResult]) -> SocAssessment:
+    """Assess whether SOC claims exist and whether access appears gated."""
     notes: List[str] = []
     supporting: List[str] = []
 
@@ -909,17 +1036,25 @@ def assess_soc(pages: List[PageScanResult]) -> SocAssessment:
     if soc_claimed:
         if login_pages:
             access, conf = "login_required", 0.80
-            notes.append("SOC language found, and nearby login/sign-in language suggests report access is gated.")
+            notes.append(
+                "SOC language found, and nearby login or sign-in language suggests report access is gated."
+            )
         elif request_pages:
             access, conf = "request_required", 0.85
-            notes.append("SOC language found, and nearby request/NDA language suggests report is available upon request.")
+            notes.append(
+                "SOC language found, and nearby request or NDA language suggests report is available upon request."
+            )
         else:
             access, conf = "public", 0.75
-            notes.append("SOC language is publicly stated. Report download may still require a request or portal access.")
+            notes.append(
+                "SOC language is publicly stated. Report download may still require a request or portal access."
+            )
     else:
         if portal_pages:
             access, conf = "unknown", 0.55
-            notes.append("No SOC language found in scanned pages, but a trust portal provider signal was detected.")
+            notes.append(
+                "No SOC language found in scanned pages, but a trust portal provider signal was detected."
+            )
         else:
             access, conf = "not_found", 0.20
             notes.append("No SOC language found in scanned trust/security/compliance pages.")
@@ -939,6 +1074,7 @@ def assess_soc(pages: List[PageScanResult]) -> SocAssessment:
 
 
 def assess_frameworks(pages: List[PageScanResult]) -> Dict[str, FrameworkAssessment]:
+    """Assess marketing-style framework claims across scanned pages."""
     results: Dict[str, FrameworkAssessment] = {}
     fw_to_urls: Dict[str, List[str]] = {}
 
@@ -951,11 +1087,15 @@ def assess_frameworks(pages: List[PageScanResult]) -> Dict[str, FrameworkAssessm
         urls = fw_to_urls.get(fw_name, [])
         claimed = bool(urls)
         if claimed:
-            conf, evidence, notes = 0.70, "public_statement", ["Detected a public marketing or documentation claim for this framework."]
+            conf = 0.70
+            evidence = "public_statement"
+            notes = ["Detected a public marketing or documentation claim for this framework."]
             if any(re.search(r"(security|compliance|trust)", u, re.IGNORECASE) for u in urls):
                 conf = min(0.85, conf + 0.10)
         else:
-            conf, evidence, notes = 0.20, "none", ["No claim detected on scanned pages."]
+            conf = 0.20
+            evidence = "none"
+            notes = ["No claim detected on scanned pages."]
 
         seen = set()
         urls = [u for u in urls if not (u in seen or seen.add(u))]
@@ -966,6 +1106,7 @@ def assess_frameworks(pages: List[PageScanResult]) -> Dict[str, FrameworkAssessm
 
 
 def should_print_page(status: object, fetched: bool, debug: bool) -> bool:
+    """Decide whether to print page results based on status and debug mode."""
     if debug:
         return True
     if not fetched:
@@ -982,9 +1123,16 @@ def should_print_page(status: object, fetched: bool, debug: bool) -> bool:
 # Snapshot runner with sitemap-driven discovery excluding blogs
 # ----------------------------
 
-def run_snapshot(domain: str, timeout: int, max_pages: int, sitemap_keyword_cap: int = 30) -> VendorSnapshot:
+def run_snapshot(
+    domain: str,
+    timeout: int,
+    max_pages: int,
+    sitemap_keyword_cap: int = 30,
+) -> VendorSnapshot:
     """
-    sitemap_keyword_cap: max number of sitemap-derived URLs that include security keywords to add
+    Run a snapshot scan for a vendor domain.
+
+    sitemap_keyword_cap: maximum number of sitemap-derived URLs containing security keywords to add.
     """
     domain = normalize_domain(domain)
     base_url = build_base_url(domain)
@@ -994,46 +1142,54 @@ def run_snapshot(domain: str, timeout: int, max_pages: int, sitemap_keyword_cap:
     home = scan_page(homepage_url, timeout=timeout)
     pages.append(home)
 
-    # Early robots + sitemap check to seed discovery
     discovered: List[str] = []
     robots_info = check_robots_and_sitemaps(base_url, timeout=timeout)
     sitemap_candidates: List[str] = []
     if robots_info.present and robots_info.sitemaps:
-        # fetch each sitemap and parse <loc> entries; stop if many found
         for sm in robots_info.sitemaps:
             try:
                 body, status, err = fetch_xml(sm, timeout=timeout)
             except Exception:
                 body, status, err = None, None, "fetch error"
+            _ = err
             if body and status and 200 <= status < 400:
                 urls = parse_sitemap_urls(body)
-                # filter sitemap urls for security/compliance keywords to avoid huge lists
                 for u in urls:
                     low = u.lower()
                     if likely_blog_url(low):
                         continue
-                    if any(k in low for k in ["security", "trust", "compliance", "privacy", "soc", "pci", "gdpr", "iso", "status"]):
+                    if any(
+                        k in low
+                        for k in [
+                            "security",
+                            "trust",
+                            "compliance",
+                            "privacy",
+                            "soc",
+                            "pci",
+                            "gdpr",
+                            "iso",
+                            "status",
+                        ]
+                    ):
                         sitemap_candidates.append(u)
                         if len(sitemap_candidates) >= sitemap_keyword_cap:
                             break
             if len(sitemap_candidates) >= sitemap_keyword_cap:
                 break
 
-    # If homepage had discoverable links, add them too
     if home.fetched and home.status_code and 200 <= home.status_code < 400:
         resp, _ = fetch_url(home.url, timeout=timeout)
-        if resp is not None and (resp.text or ""):
+        if resp is not None and resp.text:
             discovered = discover_links_from_homepage(resp.text, home.url, domain)
 
-    # Build base candidate list (same default paths + common subdomains)
-    candidates = []
+    candidates: List[str] = []
     for u in generate_candidate_urls(base_url, domain) + discovered + sitemap_candidates:
         if u not in candidates:
             candidates.append(u)
 
     candidates = [u for u in candidates if u.rstrip("/") != homepage_url.rstrip("/")]
 
-    # limit pages scanned to max_pages
     for u in candidates[: max(0, max_pages - 1)]:
         pages.append(scan_page(u, timeout=timeout))
 
@@ -1048,12 +1204,21 @@ def run_snapshot(domain: str, timeout: int, max_pages: int, sitemap_keyword_cap:
     dmarc_present, dmarc_policy, dmarc_raw = check_dmarc(domain)
     dmarc_assessment = assess_dmarc(dmarc_present, dmarc_policy, dmarc_raw)
 
-    tls_version, tls_ok, cert_valid, not_before, not_after, days_until_expiry, tls11_allowed, tls10_allowed = check_tls(domain, timeout=timeout)
+    (
+        tls_version,
+        tls_ok,
+        cert_valid,
+        not_before,
+        not_after,
+        days_until_expiry,
+        tls11_allowed,
+        tls10_allowed,
+    ) = check_tls(domain, timeout=timeout)
 
     hsts_assessment = check_hsts(base_url, timeout=timeout)
 
     security_txt = check_security_txt(base_url, timeout=timeout)
-    robots = robots_info  # we already collected robots earlier
+    robots = robots_info
     status_page = check_status_page(domain, base_url, timeout=timeout)
 
     dns_tls = DnsTlsAssessment(
@@ -1091,6 +1256,7 @@ def run_snapshot(domain: str, timeout: int, max_pages: int, sitemap_keyword_cap:
 # ----------------------------
 
 def print_summary(snapshot: VendorSnapshot, debug: bool = False) -> None:
+    """Print a human-readable summary of snapshot results."""
     print(f"Vendor: {snapshot.vendor_domain}")
     print(f"Scanned: {snapshot.scanned_at_utc}")
     print(f"Pages scanned: {snapshot.pages_scanned}")
@@ -1167,7 +1333,9 @@ def print_summary(snapshot: VendorSnapshot, debug: bool = False) -> None:
         if d.security_txt.expires:
             print(f"    security.txt expires: {d.security_txt.expires}")
         if d.security_txt.preferred_languages:
-            print(f"    security.txt preferred-languages: {d.security_txt.preferred_languages}")
+            print(
+                f"    security.txt preferred-languages: {d.security_txt.preferred_languages}"
+            )
         if d.security_txt.warnings:
             for w in d.security_txt.warnings[:5]:
                 print(f"    security.txt warning: {w}")
@@ -1199,7 +1367,11 @@ def print_summary(snapshot: VendorSnapshot, debug: bool = False) -> None:
         title = f" | {p.title}" if p.title else ""
         soc_flag = " | SOC" if p.soc_hits else ""
         portal_flag = " | Portal" if p.trust_portal_hits else ""
-        gated_flag = " | Login-gated" if p.login_gated_hits else (" | Request-gated" if p.request_gated_hits else "")
+        gated_flag = (
+            " | Login-gated"
+            if p.login_gated_hits
+            else (" | Request-gated" if p.request_gated_hits else "")
+        )
         fw_flag = " | " + ", ".join(sorted(p.frameworks_found.keys())) if p.frameworks_found else ""
 
         print(f"  - [{fetched}] {st} {p.url}{title}{soc_flag}{portal_flag}{gated_flag}{fw_flag}")
@@ -1208,6 +1380,7 @@ def print_summary(snapshot: VendorSnapshot, debug: bool = False) -> None:
 
 
 def snapshot_to_json(snapshot: VendorSnapshot) -> str:
+    """Serialize a snapshot to JSON for saving or automation."""
     return json.dumps(asdict(snapshot), indent=2, sort_keys=False)
 
 
@@ -1216,7 +1389,10 @@ def snapshot_to_json(snapshot: VendorSnapshot) -> str:
 # ----------------------------
 
 def main(argv: List[str]) -> int:
-    p = argparse.ArgumentParser(description="Vendor Risk Snapshot (framework claims + DNS/email/TLS/hygiene checks)")
+    """CLI entrypoint that parses args, runs snapshot, prints output, and exits."""
+    p = argparse.ArgumentParser(
+        description="Vendor Risk Snapshot (framework claims + DNS/email/TLS/hygiene checks)"
+    )
     p.add_argument("--domain", required=True, help="Vendor domain, example: example.com")
     p.add_argument("--timeout", type=int, default=12, help="HTTP timeout seconds")
     p.add_argument("--max-pages", type=int, default=15, help="Max number of pages to scan")
